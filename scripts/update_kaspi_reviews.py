@@ -49,7 +49,8 @@ def fetch():
     })
     with urllib.request.urlopen(request, timeout=20) as response:
         data = json.load(response)
-    total = next((g.get("total") for g in data.get("groupSummary", []) if g.get("id") == "ALL"), None)
+    # "COMMENT" = written reviews (what Kaspi calls "отзывы"); "ALL" would also count bare star ratings.
+    total = next((g.get("total") for g in data.get("groupSummary", []) if g.get("id") == "COMMENT"), None)
     rating = data.get("summary", {}).get("global")
     if not isinstance(total, int) or total <= 0:
         raise ValueError(f"unexpected total: {total!r}")
