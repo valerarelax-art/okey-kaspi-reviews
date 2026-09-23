@@ -5,6 +5,11 @@ Writes {"total", "rating", "updatedAt"} to the JSON file served at
 https://okeystaydry.com/data/kaspi-reviews.json. The site shows the number baked in
 at build time and replaces it with this file when it is available.
 
+Kaspi does not answer requests from the web server's hosting IP range, so the
+direct fetch runs in GitHub Actions (repo valerarelax-art/okey-kaspi-reviews). On the
+server, set OKEY_KASPI_MIRROR_URL to that repo's raw kaspi-reviews.json and the script
+copies the checked numbers from there instead.
+
 Safety: the file is replaced atomically and only when Kaspi returns a sane answer
 (an integer total that is not less than half of the previous one). Any failure
 keeps the previous file, so the site never shows a broken or zero value.
@@ -18,10 +23,25 @@ from datetime import datetime, timezone
 
 PRODUCT_ID = "135402917"
 API = f"https://kaspi.kz/yml/review-view/api/v1/reviews/product/{PRODUCT_ID}?limit=1&withAgg=true"
+MIRROR = os.environ.get("OKEY_KASPI_MIRROR_URL", "")
 OUT = os.environ.get("OKEY_KASPI_REVIEWS_OUT", "/opt/okeystaydry-site/data/kaspi-reviews.json")
 
 
+def fetch_mirror():
+    request = urllib.request.Request(MIRROR, headers={"User-Agent": "okeystaydry.com review count"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        data = json.load(response)
+    total, rating = data.get("total"), data.get("rating")
+    if not isinstance(total, int) or total <= 0:
+        raise ValueError(f"unexpected total: {total!r}")
+    if not isinstance(rating, (int, float)) or not 0 < rating <= 5:
+        raise ValueError(f"unexpected rating: {rating!r}")
+    return total, round(float(rating), 1)
+
+
 def fetch():
+    if MIRROR:
+        return fetch_mirror()
     request = urllib.request.Request(API, headers={
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (okeystaydry.com daily review count)",
