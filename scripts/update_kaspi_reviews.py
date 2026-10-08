@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import urllib.request
 from datetime import datetime, timezone
 
@@ -25,6 +26,7 @@ PRODUCT_ID = "135402917"
 API = f"https://kaspi.kz/yml/review-view/api/v1/reviews/product/{PRODUCT_ID}?limit=1&withAgg=true"
 MIRROR = os.environ.get("OKEY_KASPI_MIRROR_URL", "")
 OUT = os.environ.get("OKEY_KASPI_REVIEWS_OUT", "/opt/okeystaydry-site/data/kaspi-reviews.json")
+RETRY_PAUSES = [30, 90]  # seconds between the 3 attempts; fits the 5-minute Actions timeout
 
 
 def fetch_mirror():
@@ -59,9 +61,21 @@ def fetch():
     return total, round(float(rating), 1)
 
 
+def fetch_with_retries():
+    # Kaspi occasionally drops a single connection; only give up after several tries.
+    for attempt, pause in enumerate(RETRY_PAUSES + [None], start=1):
+        try:
+            return fetch()
+        except Exception as error:
+            print(f"{datetime.now(timezone.utc).isoformat()} attempt {attempt} failed: {error}", file=sys.stderr)
+            if pause is None:
+                raise
+            time.sleep(pause)
+
+
 def main():
     try:
-        total, rating = fetch()
+        total, rating = fetch_with_retries()
     except Exception as error:  # keep the previous file on any failure
         print(f"{datetime.now(timezone.utc).isoformat()} kaspi fetch failed: {error}", file=sys.stderr)
         return 1
